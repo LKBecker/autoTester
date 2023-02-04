@@ -1,0 +1,19 @@
+.Rproj.user/*
+Documents/*
+*.docx
+*.xlsx
+*.xlsm
+!Template.xlsm
+*.rdp
+*.sql
+config.ini
+230131-095656_LevenshteinLIMSCodeMerge.tsv
+Code/issueTrackerGraphic.R
+Code/log_trim.R
+Code/TestCodeOverlaps.R
+Thumbs.db
+testYIndices.txt
+* Screenshots/
+Output/ScriptDigest.tsv
+Code/Renamer.ps1
+Code/setup.R
