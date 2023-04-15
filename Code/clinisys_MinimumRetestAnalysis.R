@@ -3,6 +3,7 @@
 #
 
 #Libraries====
+.libPaths("C:/Users/BECKEL201/Documents/R Libraries/") #Sets local libraries to avoid MASSIVE network lag...
 library(readxl)
 library(data.table)
 library(stringr)
@@ -45,14 +46,10 @@ SplitDataTableWithMultiRows<-function(DataTable, TargetColumnIndex, Separator=",
     return(out)
 }
 
-Logfile    <- fread("./AutoTestingSession.log", sep="\t", header = T)
-MRI_Tests  <- Logfile[grepl("^MRI", `Scenario ID`)]
+Logfile    <- fread("./Output/AutoTestingSession.log", sep="\t", header = T)
+MRI_Tests  <- Logfile[grepl("^MRI-016", `Scenario ID`)]
 
-MRI_Tests <- MRI_Tests[!grepl("^MRI-002", `Scenario ID`)]
-
-rm(Logfile)
-
-MRI_Tests  <- MRI_Tests[,.(ID=`SubScenario ID`, Phase, CollDate=as.Date.character(`Sample Collected`, format="%d/%m/%Y"),
+MRI_Tests  <- MRI_Tests[,.(ID=`Scenario ID`, Phase, CollDate=as.Date.character(`Sample Collected`, format="%d/%m/%Y"),
                            AuthQ=`Auth Queue`, Sample=`Sample ID`, Test=str_extract(`Target Result`, "(\\w+)\\]") )]
 MRI_Tests[,Test := str_extract(Test, "\\w+")]
 MRI_Tests[, PassFail := str_extract(AuthQ, "PASS|FAIL")]
@@ -71,3 +68,4 @@ setcolorder(MRI_Tests, c("ID", "Sample", "Test", "NDaysBetween", "PassFail", "Du
 
 
 write.table(MRI_Tests, "clipboard", sep="\t", row.names = F, col.names = T)
+rm(Logfile)

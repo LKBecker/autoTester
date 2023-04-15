@@ -1,3 +1,19 @@
+#                   ⣰⣦⣄           
+#                ⢀⣴⣿⡿⠃          
+#               ⠭⠚⠿⣋            
+#             ⡜ ⠱⡀             
+#            ⡐   ⠑⡀            
+#   ⣄      ⡰⣠⠼⠚⠛⢦⣜⣆      ⢠⠧⢴⣶⡆
+#⠰⠿⠛⠹    ⡰⡹⠃ ⢠  ⠙⢭⣧⡀    ⠳⡀⠈ 
+#  ⡠⠃ ⢀⣀⡴⠙⠷⢄ ⢸⠆ ⣠⠾⠉⠹⣶⠦⢤⣀⡇  
+#  ⠉⠉⠉⠉⡰⠧  ⡵⣯⠿⠿⣭⠯⠤⠤⠤⠬⣆ ⠈   
+#     ⣰⣁⣁⣀⣀⣄⣛⠉⠉⢟⠈⡄   ⢈⣆    
+#    ⡰⡇⡘   ⣰⣀⣀⣀⣀⣀⣇⣀⣀⣀⣆⣋⡂     
+#          ⢸    ⡇                  
+#          ⠈⢆   ⠘⠒⢲⠆       
+#            ⢹⡀   ⠸        
+#            ⠈⡇   ⠁        
+
 VERSION = "2.0.0r11"
 
 #TODO:
@@ -8,6 +24,7 @@ import datetime
 import logging
 import os
 import pyautogui
+#import pydirectinput
 import pyperclip
 import subprocess
 import time
@@ -21,10 +38,21 @@ DEFAULT_SOURCE_GP = "M82046"
 DEFAULT_LASTNAME  = "UKASBIO-LKB"
 ROOTDIR = "W:/Pathology/Biochem/LKBecker/Projects/autoTester_CP/"
 LOGFORMAT = '%(asctime)s: %(name)-18s:%(levelname)-7s:%(message)s'
-SHORT_DELAY     = 0.5
-MED_DELAY       = 0.74
-LONG_DELAY      = 1.2
-LONGEST_DELAY   = 2.4
+
+SHORT_DELAY     = 0.4
+MED_DELAY       = 0.55
+LONG_DELAY      = 0.8
+LONGEST_DELAY   = 1.50
+
+WORKING_FROM_HOME = False
+
+if WORKING_FROM_HOME:
+    SHORT_DELAY     = 0.75
+    MED_DELAY       = 1.00
+    LONG_DELAY      = 1.30
+    LONGEST_DELAY   = 2.50
+
+
 RESULT_STATIC_X = 900
 RESULT_Y_PER_ANALYTE = 20
 AUTH_QUEUE_PER_Y= 22.5 
@@ -329,172 +357,211 @@ def closeWinPath():
 
         pyautogui.press('enter') # pydirectinput.press('enter')
 
-def requestSample(Scenario:TestingScenario, modeMRI:bool=False):
-    focusWindowIfExists("(REMOTEUHNM.WINPATH.CO.UK)")
+def requestSample(Scenario:TestingScenario, modeMRI:bool=False, useOffset:bool=False):
+    def checkForLabNoAllocError():
+        focusWindowIfExists("WinPath") #TODO Check
+        pyautogui.hotkey('ctrl', 'a')
+        time.sleep(SHORT_DELAY)
+        pyautogui.hotkey('ctrl', 'c')
+        windowVal = pyperclip.paste()
+        if windowVal:
+            windowVal = [x for x in windowVal.split("\n") if x]
+            if len(windowVal)>3:
+                if windowVal[3] == "This lab no. has been entered on another terminal since you started keying it in.":
+                    logging.info(f"Detected Lab No allocation error for scenario {Scenario.SubScenarioID}-{Scenario.Phase}. Looping...")
+                    return True
+        return False
+        
+
+    focusWindowIfExists("WinPath Enterprise : ")
     logging.debug("requestSample(): Start")
-    pyautogui.click(*WinPath['Btn_RequestEntry'])
+    #pyautogui.click(*WinPath['Btn_RequestEntry'])
+    pyautogui.hotkey('shift', 'F1')
     time.sleep(MED_DELAY)
     logging.debug("Request entry opened.")
+
+    #TODO: recode for Not Actually Free Lab No
+
+    LabNoAllocError = True
+    while LabNoAllocError:
     
-    pyautogui.click(*RequestEntry['Btn_UseNextFreeLabNo'])
-    time.sleep(MED_DELAY)
-    Scenario.LabNumber = retrieveViaClipboard(RequestEntry['Field_Labno_Start'], RequestEntry['Field_Labno_End'])
-    assert Scenario.LabNumber != ""
-    logging.info(f"Processing Scenario via sample [{Scenario.LabNumber}]...")
-
-    pyautogui.click(*RequestEntry['Btn_Go'])
-    time.sleep(SHORT_DELAY)
-    pyautogui.click(*RequestEntry['Btn_SwitchToManualEntry'])
-    time.sleep(MED_DELAY)
-    
-    pyautogui.click(*RequestEntry['Field_Surname'])
-    pyautogui.write(DEFAULT_LASTNAME)
-    pyautogui.press('tab')
-    pyautogui.write(Scenario.ID)
-    pyautogui.press('enter')
-    time.sleep(SHORT_DELAY)
-
-    try:
-        PatientCreatedHere = False
-        _PatientDoenstExist = pyautogui.locateOnScreen(image=os.path.join(ROOTDIR, "noPatientFound.png"), region = RequestEntry['Area_NoPtFound'])
-        if _PatientDoenstExist:
-            pyautogui.click(*RequestEntry['Btn_NewPatient'])   
-            PatientCreatedHere = True
-            time.sleep(MED_DELAY)
-            pyautogui.click(*RequestEntry['Field_NewPtDOB'])
-            pyautogui.write(Scenario.PatientDOB.strftime("%d/%m/%Y"))
-
-            pyautogui.click(*RequestEntry['Field_NewPtSex'])
-            pyautogui.write(Scenario.ScenarioSex)
-
-            time.sleep(MED_DELAY)
-            pyautogui.click(*RequestEntry['Btn_ConfirmNewPatient'])
-            time.sleep(MED_DELAY)
-        else:
-            if modeMRI == False and not (Scenario.ID in DOBVerified):
-                pyautogui.click(*RequestEntry['Btn_AmendPatient'])
-                time.sleep(SHORT_DELAY)
-                pyautogui.click(*RequestEntry['Field_PatientDOB_Day'])
-                time.sleep(SHORT_DELAY)
-                pyautogui.hotkey('ctrl', 'c')
-                time.sleep(SHORT_DELAY)
-                DOBDay = pyperclip.paste()
-
-                pyautogui.click(*RequestEntry['Field_PatientDOB_Month'])
-                time.sleep(SHORT_DELAY)
-                pyautogui.hotkey('ctrl', 'c')
-                time.sleep(SHORT_DELAY)
-                DOBMonth = pyperclip.paste()
-                time.sleep(SHORT_DELAY)
-                
-                pyautogui.click(*RequestEntry['Field_PatientDOB_Year'])
-                time.sleep(SHORT_DELAY)
-                pyautogui.hotkey('ctrl', 'c')
-                time.sleep(SHORT_DELAY)
-                DOBYear = pyperclip.paste()
-                CurrentDOB = datetime.datetime.strptime(f"{DOBDay}-{DOBMonth}-{DOBYear}", "%d-%b-%Y")
-                del(DOBDay, DOBMonth, DOBYear)
-
-                if not (Scenario.PatientDOB.date() == CurrentDOB.date()):
-                    pyautogui.click(*RequestEntry['Field_PatientDOB_Day'])
-                    pyautogui.keyDown('delete')
-                    time.sleep(MED_DELAY)
-                    pyautogui.keyUp('delete')
-                    pyautogui.write(Scenario.PatientDOB.strftime("%d/%m/%Y"))
-                    logging.info(f"Amending DOB for patient from {CurrentDOB} to {Scenario.PatientDOB}...")
-                    DOBVerified.append(Scenario.ID)
-
-                pyautogui.click(*RequestEntry['Btn_SaveAndReturn'])
-                time.sleep(SHORT_DELAY)
-            pyautogui.click(*RequestEntry['Btn_AcceptPatient'])   
-            time.sleep(MED_DELAY)
-
-    except pyautogui.ImageNotFoundException:
-            logging.debug("ImageNotFoundException triggered; patient appears to exist. Continuing...")
-            pyautogui.click(*RequestEntry['Btn_AcceptPatient'])
-        #TODO: Reimplement?
-        # SetDOB = retrieveViaClipboard(RequestEntry['Field_DOB_Start'], RequestEntry['Field_DOB_End'])
-        # SetDOB = datetime.datetime.strptime(SetDOB, "%d/%m/%Y")
-        # if not (Scenario.PatientDOB.date() == SetDOB.date()):
-        #     pyautogui.click(*RequestEntry['DOBFieldStart'], clicks=2)
-        #     pyautogui.write(Scenario.PatientDOB.strftime("%d/%m/%Y"))
-        #     changedDOB = True
-
-    if PatientCreatedHere:
-        if Scenario.PatientTags:
-            logging.info("requestSample(): Patient was newly created and has Flags to be applied. Opening interface...")
-            pyautogui.hotkey('shift', 'f9') #Open Patient Flag Panel, could also click at 2 coords
-            time.sleep(SHORT_DELAY)
-            pyautogui.press('tab') #Select lab number field
-            time.sleep(SHORT_DELAY)
+        if useOffset:
+            logging.info(f"Processing Scenario {Scenario.SubScenarioID}-{Scenario.Phase} via -offset- sample no [{Scenario.LabNumber}]...")
+            #request entry opens with cursor in Lab No field
             pyautogui.write(Scenario.LabNumber)
-            pyautogui.press('enter') #Confirm current lab number
+
+        else:
+            pyautogui.click(*RequestEntry['Btn_UseNextFreeLabNo'])
             time.sleep(MED_DELAY)
-            pyautogui.press('tab') #Select first flag field
-            if Scenario.PatientTags:
-                for _Flag in Scenario.PatientTags:
-                    logging.info(f"requestSample(): Applying flag {_Flag} to patient.")
-                    pyautogui.write(_Flag)
-                    pyautogui.press('enter')
-                    #TODO: Check for error window
-            pyautogui.hotkey('alt', 'o') #Presses OK button
-            time.sleep(MED_DELAY)
-    
-    pyautogui.click(*RequestEntry['Field_Clinician'])  
-    pyautogui.write(DEFAULT_CLINICIAN)
+            Scenario.LabNumber = retrieveViaClipboard(RequestEntry['Field_Labno_Start'], RequestEntry['Field_Labno_End'])
+            assert Scenario.LabNumber != ""
+            logging.info(f"Processing Scenario {Scenario.SubScenarioID}-{Scenario.Phase} via -acquired- sample no [{Scenario.LabNumber}]...")
 
-    pyautogui.click(*RequestEntry['Field_Source'])
-    if Scenario.Location == "GP":
-        pyautogui.write(DEFAULT_SOURCE_GP)
-    elif Scenario.Location == "IP":
-        pyautogui.write(DEFAULT_SOURCE_IP)
-    elif Scenario.Location == "OP":
-        pyautogui.write(DEFAULT_SOURCE_OP)
-    else:
-        pyautogui.write(Scenario.Location)
-
-    
-    pyautogui.click(*RequestEntry['Field_SampleDate'])
-    pyautogui.hotkey('shift', 'end')
-    pyautogui.press('delete')
-    pyautogui.write(Scenario.SampleTaken.strftime("%d/%m/%Y"))
-    pyautogui.press('tab', presses=2)
-    pyautogui.write(Scenario.SampleTaken.strftime("%H%M"))
-
-    pyautogui.press('tab')
-    pyautogui.write(Scenario.SampleReceived.strftime("%d/%m/%Y"))
-    pyautogui.press('tab', presses=2)
-    pyautogui.write(Scenario.SampleReceived.strftime("%H%M"))
-
-    if Scenario.ClinicalDetails:
-        logging.info(f"Scenario {Scenario.SubScenarioID} requires Clinical Detail [{Scenario.ClinicalDetails}]. Entering code.")    
-        pyautogui.click(*RequestEntry['Field_ClinicalDetails1'])
-        pyautogui.write(Scenario.ClinicalDetails)
-
-    if Scenario.ClinNotes:
-        logging.info(f"Scenario {Scenario.SubScenarioID} specifies Add. Notes [{Scenario.ClinNotes}]. Entering into designated field...")
-        pyautogui.click(*RequestEntry['Field_AddNotes'])
-        pyautogui.write(Scenario.ClinNotes)
-    
-    #Now to create the sample and request...
-    pyautogui.click(*RequestEntry['Field_FirstTest'])
-    logging.info(f"Submitting test requests for Scenario {Scenario.SubScenarioID}...")
-    for requiredSet in Scenario.requiredTestSets:
-        logging.info(f"Entering required set [{requiredSet}].")
-        pyautogui.write(requiredSet[0])
+        pyautogui.click(*RequestEntry['Btn_Go'])
+        time.sleep(SHORT_DELAY)
+        pyautogui.click(*RequestEntry['Btn_SwitchToManualEntry'])
+        time.sleep(MED_DELAY)
+        
+        pyautogui.click(*RequestEntry['Field_Surname'])
+        pyautogui.write(DEFAULT_LASTNAME)
         pyautogui.press('tab')
-    pyautogui.click(*RequestEntry['Btn_SaveRequest'])
-    time.sleep(MED_DELAY)
+        pyautogui.write(Scenario.ID)
+        pyautogui.press('enter')
+        time.sleep(SHORT_DELAY)
+
+        if WORKING_FROM_HOME:
+            time.sleep(30)
+
+        try:
+            PatientCreatedHere = False
+            _PatientDoenstExist = pyautogui.locateOnScreen(image=os.path.join(ROOTDIR, "noPatientFound.png"), region = RequestEntry['Area_NoPtFound'])
+            if _PatientDoenstExist:
+                pyautogui.click(*RequestEntry['Btn_NewPatient'])   
+                PatientCreatedHere = True
+                time.sleep(MED_DELAY)
+                pyautogui.click(*RequestEntry['Field_NewPtDOB'])
+                pyautogui.write(Scenario.PatientDOB.strftime("%d/%m/%Y"))
+
+                pyautogui.click(*RequestEntry['Field_NewPtSex'])
+                pyautogui.write(Scenario.ScenarioSex)
+
+                time.sleep(MED_DELAY)
+                pyautogui.click(*RequestEntry['Btn_ConfirmNewPatient'])
+                time.sleep(MED_DELAY)
+            else:
+                if modeMRI == False and not (Scenario.ID in DOBVerified):
+                    pyautogui.click(*RequestEntry['Btn_AmendPatient'])
+                    time.sleep(SHORT_DELAY)
+                    pyautogui.click(*RequestEntry['Field_PatientDOB_Day'])
+                    time.sleep(SHORT_DELAY)
+                    pyautogui.hotkey('ctrl', 'c')
+                    time.sleep(SHORT_DELAY)
+                    DOBDay = pyperclip.paste()
+
+                    pyautogui.click(*RequestEntry['Field_PatientDOB_Month'])
+                    time.sleep(SHORT_DELAY)
+                    pyautogui.hotkey('ctrl', 'c')
+                    time.sleep(SHORT_DELAY)
+                    DOBMonth = pyperclip.paste()
+                    time.sleep(SHORT_DELAY)
+                    
+                    pyautogui.click(*RequestEntry['Field_PatientDOB_Year'])
+                    time.sleep(SHORT_DELAY)
+                    pyautogui.hotkey('ctrl', 'c')
+                    time.sleep(SHORT_DELAY)
+                    DOBYear = pyperclip.paste()
+                    CurrentDOB = datetime.datetime.strptime(f"{DOBDay}-{DOBMonth}-{DOBYear}", "%d-%b-%Y")
+                    del(DOBDay, DOBMonth, DOBYear)
+
+                    if not (Scenario.PatientDOB.date() == CurrentDOB.date()):
+                        pyautogui.click(*RequestEntry['Field_PatientDOB_Day'])
+                        pyautogui.keyDown('delete')
+                        time.sleep(MED_DELAY)
+                        pyautogui.keyUp('delete')
+                        pyautogui.write(Scenario.PatientDOB.strftime("%d/%m/%Y"))
+                        logging.info(f"Amending DOB for patient from {CurrentDOB} to {Scenario.PatientDOB}...")
+                        DOBVerified.append(Scenario.ID)
+
+                    pyautogui.click(*RequestEntry['Btn_SaveAndReturn'])
+                    time.sleep(SHORT_DELAY)
+                pyautogui.click(*RequestEntry['Btn_AcceptPatient'])   
+                time.sleep(MED_DELAY)
+
+        except pyautogui.ImageNotFoundException:
+                logging.debug("ImageNotFoundException triggered; patient appears to exist. Continuing...")
+                pyautogui.click(*RequestEntry['Btn_AcceptPatient'])
+            #TODO: Reimplement?
+            # SetDOB = retrieveViaClipboard(RequestEntry['Field_DOB_Start'], RequestEntry['Field_DOB_End'])
+            # SetDOB = datetime.datetime.strptime(SetDOB, "%d/%m/%Y")
+            # if not (Scenario.PatientDOB.date() == SetDOB.date()):
+            #     pyautogui.click(*RequestEntry['DOBFieldStart'], clicks=2)
+            #     pyautogui.write(Scenario.PatientDOB.strftime("%d/%m/%Y"))
+            #     changedDOB = True
+
+        if PatientCreatedHere:
+            if Scenario.PatientTags:
+                if Scenario.PatientTags != "":
+                    logging.info("requestSample(): Patient was newly created and requires Flags to be applied. Opening flagging interface...")
+                    pyautogui.hotkey('shift', 'f9') #Open Patient Flag Panel, could also click at 2 coords
+                    time.sleep(SHORT_DELAY)
+                    pyautogui.press('tab') #Select lab number field
+                    time.sleep(SHORT_DELAY)
+                    pyautogui.write(Scenario.LabNumber)
+                    pyautogui.press('enter') #Confirm current lab number
+                    time.sleep(MED_DELAY)
+                    pyautogui.press('tab') #Select first flag field
+                    for _Flag in Scenario.PatientTags:
+                        logging.info(f"requestSample(): Applying flag {_Flag} to patient.")
+                        pyautogui.write(_Flag)
+                        pyautogui.press('enter')
+                        #TODO: Check for error window
+                    pyautogui.hotkey('alt', 'o') #Presses OK button
+                    time.sleep(MED_DELAY)
+        
+        pyautogui.click(*RequestEntry['Field_Clinician'])  
+        pyautogui.write(DEFAULT_CLINICIAN)
+
+        pyautogui.click(*RequestEntry['Field_Source'])
+        if Scenario.Location == "GP":
+            pyautogui.write(DEFAULT_SOURCE_GP)
+        elif Scenario.Location == "IP":
+            pyautogui.write(DEFAULT_SOURCE_IP)
+        elif Scenario.Location == "OP":
+            pyautogui.write(DEFAULT_SOURCE_OP)
+        else:
+            pyautogui.write(Scenario.Location)
+    
+        pyautogui.click(*RequestEntry['Field_SampleDate'])
+        pyautogui.hotkey('shift', 'end')
+        pyautogui.press('delete')
+        pyautogui.write(Scenario.SampleTaken.strftime("%d/%m/%Y"))
+        pyautogui.press('tab', presses=2)
+        pyautogui.write(Scenario.SampleTaken.strftime("%H%M"))
+
+        pyautogui.press('tab')
+        pyautogui.write(Scenario.SampleReceived.strftime("%d/%m/%Y"))
+        pyautogui.press('tab', presses=2)
+        pyautogui.write(Scenario.SampleReceived.strftime("%H%M"))
+
+        if Scenario.ClinicalDetails:
+            logging.info(f"Scenario {Scenario.SubScenarioID}-{Scenario.Phase} requires Clinical Detail [{Scenario.ClinicalDetails}]. Entering code.")    
+            pyautogui.click(*RequestEntry['Field_ClinicalDetails1'])
+            pyautogui.write(Scenario.ClinicalDetails)
+
+        if Scenario.ClinNotes:
+            logging.info(f"Scenario {Scenario.SubScenarioID}-{Scenario.Phase} specifies Add. Notes [{Scenario.ClinNotes}]. Entering into designated field...")
+            pyautogui.click(*RequestEntry['Field_AddNotes'])
+            pyautogui.write(Scenario.ClinNotes)
+        
+        #Now to create the sample and request...
+        pyautogui.click(*RequestEntry['Field_FirstTest'])
+        logging.info(f"Submitting test requests for Scenario {Scenario.SubScenarioID}-{Scenario.Phase}...")
+        for requiredSet in Scenario.requiredTestSets:
+            logging.info(f"Entering required set [{requiredSet}].")
+            pyautogui.write(requiredSet[0])
+            pyautogui.press('tab')
+        pyautogui.click(*RequestEntry['Btn_SaveRequest'])
+        LabNoAllocError = checkForLabNoAllocError()
+
+        time.sleep(SHORT_DELAY)
+        pyautogui.press('enter')
+
+        time.sleep(MED_DELAY)
+    
+    pyautogui.press('esc', presses=5, interval=0.1)
+    time.sleep(LONGEST_DELAY)
 
 def enterResults(Scenario:TestingScenario, modeMRI:bool=False):
     logging.debug("enterResults(): Start")
+    focusWindowIfExists("WinPath Enterprise : ")
     RESULT_Y_START  = 305   
     logging.info(f"Proceeding to Results Entry for specimen {Scenario.LabNumber}")
-    pyautogui.click(*WinPath['Btn_ResultEntry'])
+    #pyautogui.click(*WinPath['Btn_ResultEntry'])
+    pyautogui.hotkey('shift', 'F2')
     time.sleep(MED_DELAY)
-    pyautogui.click(*Results['Field_LabID'])
-    pyautogui.hotkey('ctrl', 'a')
-    pyautogui.press('delete')
+    # pyautogui.click(*Results['Field_LabID'])
+    # pyautogui.hotkey('ctrl', 'a')
+    # pyautogui.press('delete')
     pyautogui.write(Scenario.LabNumber)
     pyautogui.press('enter')
     time.sleep(MED_DELAY)
@@ -528,8 +595,10 @@ def enterResults(Scenario:TestingScenario, modeMRI:bool=False):
     
 def processSampleAuthQueue(Scenario:TestingScenario, takeScreenshot:bool = False) -> str:
     logging.info("processSampleAuthQueue(): Start")
+    focusWindowIfExists("WinPath Enterprise : ")
     time.sleep(LONGEST_DELAY)               # Allow time for processing in background...
-    pyautogui.click(*WinPath['Btn_Authorisation'])
+    #pyautogui.click(*WinPath['Btn_Authorisation'])
+    pyautogui.hotkey('shift', 'F6')
     time.sleep(SHORT_DELAY)
     pyautogui.click(*Authorisation['Btn_Search'])
     time.sleep(SHORT_DELAY)
@@ -554,7 +623,9 @@ def processSampleAuthQueue(Scenario:TestingScenario, takeScreenshot:bool = False
 
 def documentSampleReport(Scenario:TestingScenario, modeMRI:bool=False):
     logging.debug("documentSampleReport(): Start")
-    pyautogui.click(*WinPath['Btn_Search'])
+    focusWindowIfExists("WinPath Enterprise : ")
+    #pyautogui.click(*WinPath['Btn_Search'])
+    pyautogui.hotkey('shift', 'F3')
     time.sleep(MED_DELAY)
     pyautogui.click(*Search['Btn_RequestSearch'])
     time.sleep(SHORT_DELAY)
@@ -575,20 +646,25 @@ def documentSampleReport(Scenario:TestingScenario, modeMRI:bool=False):
     else:
         captureScreenshot(f"{Scenario.ID}_{Scenario.Phase}_1Report", area=Search['Area_Report'])
 
-def authoriseLastSampleOfQueue(Scenario:TestingScenario, TakeAuthScreeshot:bool=True, AuthIndex:int=1) -> None:
+def authoriseLastSampleOfQueue(Scenario:TestingScenario, TakeAuthScreeshot:bool=True, AuthIndex:int=1, SILLY_MODE:bool=False) -> None:
     FirstAuthQueue = Scenario.AuthQueue[0].split(" - ")
     FirstAuthQueue = list(map(lambda x: x.strip(), FirstAuthQueue))
     logging.debug(f"authoriseLastSampleOfQueue(): Aiming to authorise sample {Scenario.LabNumber} in queue {Scenario.AuthQueue}")
+    focusWindowIfExists("WinPath Enterprise : ")
     pyautogui.click(*WinPath['Btn_Authorisation'])
     time.sleep(SHORT_DELAY)
     if FirstAuthQueue[1]=="PASS queue":
         X_Pos, Y_Pos = Authorisation['PASS_Queue_Start']
         Y_Pos = Y_Pos + int(AUTH_QUEUE_PER_Y * PASSQueues.index(FirstAuthQueue[2]))
+        if SILLY_MODE:
+            Y_Pos = Y_Pos + int(AUTH_QUEUE_PER_Y)
         Btn_List = Authorisation['Btn_List_PASS']
 
     elif FirstAuthQueue[1]=="FAIL queue":
         X_Pos, Y_Pos = Authorisation['FAIL_Queue_Start']
         Y_Pos = Y_Pos + int(AUTH_QUEUE_PER_Y * FAILQueues.index(FirstAuthQueue[2]))
+        if SILLY_MODE:
+            Y_Pos = Y_Pos + int(AUTH_QUEUE_PER_Y)
         Btn_List = Authorisation['Btn_List_FAIL']
     
     else:
@@ -621,7 +697,9 @@ def authoriseLastSampleOfQueue(Scenario:TestingScenario, TakeAuthScreeshot:bool=
     logging.debug("authoriseLastSampleOfQueue(): Sample should be authorised.")
     pyautogui.press('esc', presses= 5)
 
-def processScenarios(fileName:str, modeMRITest:bool=False):
+#TODO: def assignOffsetLabNo()? in case Next Free Lab No > current pre-assigned Lab No during testing?
+
+def processScenarios(fileName:str, modeMRITest:bool=False, useLabNoOffset:bool=False):
     logFileExists = os.path.isfile(os.path.join(ROOTDIR, "Output/AutoTestingSession.log"))
     logFile = open(os.path.join(ROOTDIR, "Output/AutoTestingSession.log"), 'a')
     logging.info(f"Opening output file '{ROOTDIR}/Output/AutoTestingSession.log'...")
@@ -635,19 +713,39 @@ def processScenarios(fileName:str, modeMRITest:bool=False):
     TestingScenario.parseAll(fileName)
 
     logging.info(f"processScenarios(): {len(SCENARIOS)} scenarios loaded from file.")
-
     logging.info("processScenarios(): Start processing Scenarios...")
+
+    if useLabNoOffset:
+        #TODO: Check length of scenarios to process. Create offset. 
+        TESTINGOFFSET = 0
+        pyautogui.click(*WinPath['Btn_RequestEntry'])
+        time.sleep(MED_DELAY)
+        logging.debug("Request entry opened.")
+        pyautogui.click(*RequestEntry['Btn_UseNextFreeLabNo'])
+        time.sleep(SHORT_DELAY)
+        NextLabNo = retrieveViaClipboard(RequestEntry['Field_Labno_Start'], RequestEntry['Field_Labno_End'])
+        assert NextLabNo != ""
+       
+        TESTINGOFFSET = int(NextLabNo[3:])
+        TESTINGOFFSET = round(TESTINGOFFSET + len(SCENARIOS), -2)
+        CUR_YEAR = datetime.datetime.now().strftime("%y")
+
+        logging.info(f"Preparing lab number offset: Next lab no {NextLabNo} => Offset to {CUR_YEAR}B{TESTINGOFFSET:08d}- {CUR_YEAR}B{(TESTINGOFFSET+len(SCENARIOS)):08d}.")
+        pyautogui.press('esc', presses= 5)
+
+        for x in range(0, len(SCENARIOS)):
+            SCENARIOS[x].LabNumber = f"{CUR_YEAR}B{(TESTINGOFFSET + x):08d}"
+
     for _TestingScenario in SCENARIOS: #Replace with num counter, get next scenario to clear list only when needed
-        logging.info(f"processScenarios(): Processing Scenario {_TestingScenario.SubScenarioID} "
-        f"from {_TestingScenario.Location}")
+        logging.info(f"processScenarios(): Processing Scenario {_TestingScenario.SubScenarioID}-{_TestingScenario.Phase} from {_TestingScenario.Location}")
         
-        requestSample(Scenario=_TestingScenario, modeMRI= modeMRITest)
+        requestSample(Scenario=_TestingScenario, modeMRI= modeMRITest, useOffset=useLabNoOffset)
         time.sleep(SHORT_DELAY)
         enterResults(Scenario=_TestingScenario, modeMRI= modeMRITest)
         time.sleep(SHORT_DELAY)
         processSampleAuthQueue(Scenario=_TestingScenario, takeScreenshot=False)
         time.sleep(SHORT_DELAY)
-        authoriseLastSampleOfQueue(_TestingScenario)
+        authoriseLastSampleOfQueue(_TestingScenario, SILLY_MODE=False)
         time.sleep(SHORT_DELAY)
         documentSampleReport(_TestingScenario, modeMRI=modeMRITest)     
         
@@ -669,6 +767,14 @@ def processScenarios(fileName:str, modeMRITest:bool=False):
 
 #pyautogui.displayMousePosition()
 #openWinPath()
-#processScenarios(fileName="Output/ScriptDigest.tsv", modeMRITest=False)
-processScenarios(fileName="Output/ScriptDigest-ComplexMRI.tsv", modeMRITest=False)
+#processScenarios(fileName="Output/ScriptDigest_MRI.tsv", modeMRITest=True)
+#processScenarios(fileName="Output/ScriptDigest_CMRI-UHNM.tsv", modeMRITest=False)
+#processScenarios(fileName="Output/ScriptDigest_VB12.tsv", modeMRITest=False)
+#processScenarios(fileName="Output/ScriptDigest_XAN.tsv", modeMRITest=False)
+
+
+#LOG IN AS MACCLESFIELD / LEIGHTON FOR:
+#processScenarios(fileName="Output/ScriptDigest_B12M.tsv", modeMRITest=False)
+#processScenarios(fileName="Output/ScriptDigest-MRI-MCHT.tsv", modeMRITest=True)
+processScenarios(fileName="Output/ScriptDigest_CMRI-MCHT.tsv", modeMRITest=False)
 #closeWinPath()

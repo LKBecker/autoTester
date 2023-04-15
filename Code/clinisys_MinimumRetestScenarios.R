@@ -16,6 +16,7 @@ library(readxl)
 library(data.table)
 library(stringr)
 library(lubridate)
+library(assertthat)
 
 #Functions====
 ffwrite <- function(x, FileName=NULL, Folder="./", ...) {
@@ -58,25 +59,31 @@ SplitDataTableWithMultiRows<-function(DataTable, TargetColumnIndex, Separator=",
 WEEKSPERYEAR = 52.25 #Rougher but gives "expected" dates. More or less.
 DAYSPERMONTH = 30.5 # Sorry Ceri
 MAX_REQUESTS_PER_SAMPLE = 20
-TODAY = Sys.Date()
+TODAY = Sys.time()
+MIN_HOUR <- 9
+LogFileOffset <- 0
 
 #Variables====
 TestCodeRange = "A1:M170"
-Attempt_No = 7
 
 #Script====
+hour(TODAY) <- MIN_HOUR
+minute(TODAY) <- 0
+second(TODAY) <- 0
+
+
 #TODO: read log, set to max of scenario id after extracting number
-if (file.exists("./AutoTestingSession.log")==TRUE){
-    Logfile = fread("./AutoTestingSession.log", sep="\t", header = T)
+if (file.exists("./Output/AutoTestingSession.log")){
+    Logfile = fread("./Output/AutoTestingSession.log", sep="\t", header = T)
     Logfile = Logfile[grepl("^MRI-", `Scenario ID`), unique(`Scenario ID`)]
-    Logfile = max(as.numeric(str_extract(Logfile, "\\d{3}")))
-    
-    if (Logfile >= Attempt_No){
-        warning(sprintf("Logfile documents use of patient %02d, but current Attempt_No is %02d.
-        To ensure clean Minimum Retest Interval testing, please increase Attempt_No,
-        to create a new patient record.", Logfile, Attempt_No))
-        #do nothing for now
-    }
+    LogFileOffset = max(as.numeric(str_extract(Logfile, "\\d{3}")))
+    message(sprintf("Loading AutoTestingSession.log - %d entries feature code 'MRI-'. Setting offset to [%d]",
+                    length(Logfile), LogFileOffset+1))
+    rm(Logfile)
+    assert_that(is.numeric(LogFileOffset), 
+                msg=sprintf("HasRunMode 'Increment' cannot calculate LogFileOffset for analyte MRI; getting {%s}", 
+                            LogFileOffset))
+
 }
 
 #Read in data====
@@ -112,7 +119,7 @@ MRI_Basics[, TimeOfBirth:= TODAY - as.difftime(21*WEEKSPERYEAR, units = "weeks")
 MRI_Basics[, TimeOfBirth := format(TimeOfBirth, "%Y-%m-%d")] #And format as string for the program
 
 #Assign location and create "patient" name
-MRI_Basics[,PatientID:= sprintf("MRI-%03d", Attempt_No)]
+MRI_Basics[,PatientID:= sprintf("MRI-%03d", LogFileOffset+1)]
 MRI_Basics[,Location:= "GP"]
 
 #Calculate when our simulated samples are taken, SampleDate1====
@@ -132,9 +139,14 @@ MRI_Basics[MinimumRetestInterval_Days>=9999, SampleDate2 := TODAY] #28 days
 MRI_Basics[MinimumRetestInterval_Days<9999, 
            SampleDate2 := SampleDate1 + as.difftime(MinimumRetestInterval_Days + 1, units = "days")]
 MRI_Basics[MinimumRetestInterval_Days<9999, 
-           SampleDate3 := SampleDate2 + as.difftime(MinimumRetestInterval_Days, units="days")  ]
+           SampleDate3 := SampleDate2 + as.difftime(MinimumRetestInterval_Days, units="days")]
 MRI_Basics[MinimumRetestInterval_Days<9999, 
            SampleDate4 := SampleDate3 + as.difftime(MinimumRetestInterval_Days - 1, units = "days")]
+
+MRI_Basics[MinimumRetestInterval_Days<9999, SampleDate2 := SampleDate2 - as.difftime(10, units = "mins")]
+MRI_Basics[MinimumRetestInterval_Days<9999, SampleDate3 := SampleDate3 - as.difftime(10, units = "mins")]
+MRI_Basics[MinimumRetestInterval_Days<9999, SampleDate4 := SampleDate4 - as.difftime(10, units = "mins")]
+           
 
 #This gives us three successive timespans: 
 #   SampleDate1 to SampleDate2 = MRI + 1 (should PASS, and thus Date 2 now counts)
@@ -154,8 +166,9 @@ MRI_Basics_M[TestCode=="FITS", NormalResult := format(SampleTaken - as.difftime(
 MRI_Basics_M[TestCode=="FITR", NormalResult := format(SampleTaken, "%d/%m/%Y")]
 MRI_Basics_M[TestCode=="FITD", NormalResult := format(SampleTaken, "%d/%m/%Y")]
 
-MRI_Basics_M[, SampleReceived := format(SampleTaken, "%Y-%m-%d 12:10")]
-MRI_Basics_M[, SampleTaken := format(SampleTaken, "%Y-%m-%d 12:00")]
+MRI_Basics_M[, SampleReceived := SampleTaken + as.difftime(10, units = "mins") ]
+MRI_Basics_M[, SampleReceived := format(SampleReceived, "%Y-%m-%d %H:%M") ]
+MRI_Basics_M[, SampleTaken := format(SampleTaken, "%Y-%m-%d %H:%M")]
 
 MRI_Basics_M[,PyStr := sprintf("%s|%s|%s|%s|%s|%s|%s", 
                    Profile, TestCode, NormalResult, DisciplineIdx, ProfileIdx, AnalyteIdx, TotalOffset)]
@@ -171,28 +184,30 @@ if (F){
                                       value.var = "PyStr", fun.aggregate = paste0, collapse = ";")
     setnames(MRI_Basics_Compact, ".", "ScenarioStr")
     
-    MRI_Basics_Compact[, TargetSex:=ifelse(Attempt_No %% 2 == 0, "F", "M")]
+    MRI_Basics_Compact[, TargetSex:=ifelse(LogFileOffset %% 2 == 0, "F", "M")]
     MRI_Basics_Compact[,ScenarioID:= paste(PatientID, .I, sep="_")]
     setcolorder(MRI_Basics_Compact, c("PatientID", "Phase", "TargetSex","Location", "SampleTaken", "SampleReceived",
                                       "TimeOfBirth", "ScenarioStr", "ScenarioID"))
     
-    fwrite(MRI_Basics_Compact, "./ScriptDigest-MRITest_Minimal.tsv", sep = "\t", row.names = FALSE, col.names = T)
+    fwrite(MRI_Basics_Compact, "./ScriptDigest_MRI_Minimal.tsv", sep = "\t", row.names = FALSE, col.names = T)
 }
 #Version 2: One Set per sample====
 MRI_Basics_PerProfile <- unique(MRI_Basics_M[, .(PatientID, TimeOfBirth, Location, SampleTaken, 
                       SampleReceived, ScenarioStr=paste0(PyStr, collapse=";")), .(Profile, Phase)])
 setorder(MRI_Basics_PerProfile, Profile, Phase)
 
-MRI_Basics_PerProfile[, TargetSex:=ifelse(Attempt_No %% 2 == 0, "F", "M")]
+MRI_Basics_PerProfile[, TargetSex:=ifelse(LogFileOffset %% 2 == 0, "F", "M")]
 ScenarioIDs = MRI_Basics_PerProfile[order(Profile, Phase), .(unique(Profile))][, .(Profile=V1, ScenarioID = .I)] 
 MRI_Basics_PerProfile = merge(MRI_Basics_PerProfile, ScenarioIDs, by="Profile")
 MRI_Basics_PerProfile[, ScenarioID := paste(PatientID, ScenarioID, sep="_")]
 MRI_Basics_PerProfile[,Profile:=NULL]
-MRI_Basics_PerProfile[,ClinDetails:=""]
-MRI_Basics_PerProfile[,PtFlags:=""]
+MRI_Basics_PerProfile[,ClinDetails:=character()]
+MRI_Basics_PerProfile[,PtFlags:=character()]
 
 setcolorder(MRI_Basics_PerProfile, c("PatientID", "Phase", "TargetSex","Location", "SampleTaken", "SampleReceived",
                                   "TimeOfBirth", "ScenarioStr", "ClinDetails", "PtFlags", "ScenarioID"))
+MRI_Basics_PerProfile[,ClinNotes:=character()]
 
-fwrite(MRI_Basics_PerProfile, "./ScriptDigest-MRITest_PerProfile.tsv", sep = "\t", row.names = FALSE, col.names = T)
+fwrite(MRI_Basics_PerProfile, "./Output/ScriptDigest_MRI.tsv", sep = "\t", row.names = FALSE, col.names = T)
+message("Output complete. **REMEMBER TO MANUALLY OVERWRITE TES AND SHGB PATIENT NUMBERS**")
 rm(MRI_Basics_M, MRI_Basics, ScenarioIDs)

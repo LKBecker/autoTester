@@ -1,5 +1,5 @@
 Option Explicit
-Const BasePath As String = "W:\Pathology\Biochem\LKBecker\Projects\autoTester"
+Const BasePath As String = "W:\Pathology\Biochem\LKBecker\Projects\autoTester_CP"
 
 Function WorksheetExists(shtName As String, Optional wb As Workbook) As Boolean
     Dim sht As Worksheet
@@ -36,9 +36,10 @@ Sub Dupe()
     
     Const ColumnSampleID As Integer = 10
     Const ColumnSampleTakenDT As Integer = 11
-    Const ColumnScenario As Integer = 12
-    Const ColumnAuthorisationQueue As Integer = 13
-    Const ColumnScenarioID As Integer = 14
+    Const ColumnSampleReceivedDT As Integer = 12
+    Const ColumnScenario As Integer = 13
+    Const ColumnAuthorisationQueue As Integer = 14
+    Const ColumnScenarioID As Integer = 15
     
     Application.ScreenUpdating = False
     
@@ -202,5 +203,10 @@ Function GetMatchingValuesAsString(ByRef InputArray As Variant, ByVal MatchColum
     If UBound(ValueColumns) = 0 Then
         Output = Right(Output, Len(Output) - Len(Separator)) 'Remove first separator
     End If
-GetMatchingValuesAsString = Output
+    
+    If Output = "" Then
+        Err.Raise vbObjectError + 1000, , "Canot find any matching rows for [" & MatchVal & "] in Column " & MatchColumn & " of the Test Log  - please check Test Log format and retry."
+        Exit Function
+    End If
+    GetMatchingValuesAsString = Output
 End Function

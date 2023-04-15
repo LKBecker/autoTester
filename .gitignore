@@ -17,3 +17,7 @@ testYIndices.txt
 Output/ScriptDigest.tsv
 Code/Renamer.ps1
 Code/setup.R
+.Rproj.user
+*.vb
+!InsertImages.vb
+.Rhistory
